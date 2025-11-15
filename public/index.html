@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hypnotic Live Stream Client</title>
+<style>
+  :root { --ui-bg: rgba(20,20,20,0.85); --btn: #222; --btn-hover:#3a3a3a; color-scheme: dark; }
+  html,body { height:100%; margin:0; background:#000; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  canvas { display:block; width:100vw; height:100vh; }
+  .ui { position:fixed; left:12px; top:12px; z-index:999; background:var(--ui-bg); padding:10px; border-radius:8px; backdrop-filter: blur(6px); color:#fff; }
+  .ui .row { display:flex; gap:8px; margin-bottom:6px; align-items:center; }
+  .ui button, .ui input, .ui select { background:var(--btn); color:#fff; border:0; padding:6px 8px; border-radius:6px; }
+  .ui button:hover { background:var(--btn-hover); cursor:pointer; }
+  .small { font-size:13px; padding:4px 6px; }
+  label { font-size:13px; opacity:0.9; margin-right:6px; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <div class="row">
+    <button id="goLive" class="small">Go Live</button>
+    <button id="stopLive" class="small">Stop</button>
+    <button id="savePNG" class="small">PNG</button>
+    <button id="saveJPEG" class="small">JPG</button>
+  </div>
+  <div class="row">
+    <button id="saveSVG" class="small">SVG</button>
+    <button id="saveGIF" class="small">GIF</button>
+    <button id="saveMP4" class="small">MP4</button>
+    <label>Duration(s):</label>
+    <input id="duration" type="number" value="5" min="1" max="600" style="width:70px;" />
+  </div>
+  <div class="row">
+    <label>FPS:</label><input id="fps" type="number" value="30" min="15" max="60" style="width:70px;" />
+    <label>Bitrate(kbps):</label><input id="bitrate" type="number" value="3500" min="500" max="8000" style="width:90px;" />
+  </div>
+  <div class="row">
+    <small id="status">Status: Idle</small>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<!-- gif.js library for GIF generation (client-side) -->
+<script src="https://cdn.jsdelivr.net/npm/gif.js.optimized/dist/gif.js"></script>
+
+<script>
+/* =========================
+   Hypnotic Canvas Animation
+   ========================= */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', {alpha: true});
+let W = canvas.width = innerWidth;
+let H = canvas.height = innerHeight;
+
+window.addEventListener('resize', ()=>{
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+});
+
+let t = 0;
+const layers = 6;
+const layerDots = [40,60,80,100,120,140];
+
+function drawFrame() {
+  // soft fade background for trails
+  ctx.fillStyle = 'rgba(0,0,0,0.065)';
+  ctx.fillRect(0,0,W,H);
+
+  const cx = W/2, cy = H/2;
+  for (let l=0; l<layers; l++){
+    const dots = layerDots[l];
+    const base = 80 + l*40;
+    const speed = 0.0008 + l*0.0006;
+    const wobble = Math.sin((t*0.0008) + l)*40;
+    for (let i=0;i<dots;i++){
+      const a = (i/dots)*Math.PI*2 + t*speed*(1 + l*0.2) + Math.sin(i*0.12 + t*0.002)*0.2;
+      const r = base + wobble + Math.sin(t*0.005 + i*0.15 + l)*25;
+      const x = cx + Math.cos(a) * r * (1 + 0.12*Math.sin(t*0.003 + l*0.7));
+      const y = cy + Math.sin(a) * r * (1 + 0.12*Math.cos(t*0.003 + l*0.7));
+      const size = 2 + Math.abs(Math.sin(t*0.007 + i*0.1 + l))*4;
+      const hue = (t*0.02 + i*(360/dots) + l*40) % 360;
+      ctx.beginPath();
+      ctx.arc(x,y,size,0,Math.PI*2);
+      ctx.fillStyle = `hsla(${hue},90%,55%,0.95)`;
+      ctx.fill();
+    }
+  }
+  t += 1;
+}
+
+/* start render loop */
+let animId;
+function loop(){
+  drawFrame();
+  animId = requestAnimationFrame(loop);
+}
+loop();
+
+/* =========================
+   Export helpers
+   ========================= */
+
+// PNG / JPEG
+document.getElementById('savePNG').onclick = ()=>{
+  const link = document.createElement('a');
+  link.download = 'hypnotic.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+document.getElementById('saveJPEG').onclick = ()=>{
+  const link = document.createElement('a');
+  link.download = 'hypnotic.jpg';
+  link.href = canvas.toDataURL('image/jpeg', 0.92);
+  link.click();
+};
+
+// SVG snapshot (vector approximation)
+document.getElementById('saveSVG').onclick = ()=>{
+  const cx = W/2, cy = H/2;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
+  for (let l=0; l<layers; l++){
+    const dots = layerDots[l];
+    const base = 80 + l*40;
+    for (let i=0;i<dots;i++){
+      const a = (i/dots)*Math.PI*2 + t*0.0008*(1 + l*0.2) + Math.sin(i*0.12 + t*0.002)*0.2;
+      const r = base + Math.sin(t*0.005 + i*0.15 + l)*25;
+      const x = cx + Math.cos(a)*r;
+      const y = cy + Math.sin(a)*r;
+      const hue = (t*0.02 + i*(360/dots) + l*40) % 360;
+      svg += `<circle cx="${x}" cy="${y}" r="3" fill="hsl(${hue},90%,55%)"/>`;
+    }
+  }
+  svg += '</svg>';
+  const blob = new Blob([svg], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'hypnotic.svg'; a.click();
+};
+
+// GIF export (client-side)
+document.getElementById('saveGIF').onclick = async ()=>{
+  const duration = Number(document.getElementById('duration').value) || 5;
+  const fps = 30;
+  const frames = Math.max(1, Math.round(duration * fps));
+  const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: null });
+  let localT = t;
+  // temporarily stop the main animation while capturing smoothly
+  cancelAnimationFrame(animId);
+  for (let i=0;i<frames;i++){
+    // render one frame of the same animation progression
+    drawFrame();
+    // Add current canvas frame to gif
+    gif.addFrame(ctx, {copy:true, delay:1000/fps});
+    localT += 1;
+  }
+  gif.on('finished', (blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download='hypnotic.gif'; a.click();
+    // restart animation
+    loop();
+  });
+  gif.render();
+};
+
+// MP4/WebM export (client-side MediaRecorder)
+document.getElementById('saveMP4').onclick = async ()=>{
+  const duration = Number(document.getElementById('duration').value) || 5;
+  const fps = Number(document.getElementById('fps').value) || 30;
+  // capture at requested fps
+  const stream = canvas.captureStream(fps);
+  const mime = 'video/webm;codecs=vp8,opus';
+  const recorder = new MediaRecorder(stream, { mimeType: mime });
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'hypnotic.webm'; a.click();
+  };
+  recorder.start(1000/30); // timeslice
+  // let it record for the chosen duration
+  setTimeout(()=> recorder.stop(), duration*1000);
+};
+
+/* =========================
+   Live streaming (Browser -> WebSocket -> Replit server -> FFmpeg -> YouTube)
+   ========================= */
+
+let ws;
+let mediaRecorder;
+const statusEl = document.getElementById('status');
+
+function setStatus(s){ statusEl.innerText = `Status: ${s}`; }
+
+document.getElementById('goLive').onclick = async ()=>{
+  try {
+    // open websocket to server (same origin)
+    setStatus('Connecting to relay...');
+    const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/';
+    ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = async () => {
+      setStatus('Connected to relay. Starting capture...');
+      // capture canvas stream
+      const fps = Number(document.getElementById('fps').value) || 30;
+      const stream = canvas.captureStream(fps);
+      // try to include system audio or oscillator? For now, no audio. YouTube expects audio — we'll send silent audio from FFmpeg side (YouTube accepts video-only but sometimes mutes)
+      // Start MediaRecorder (webm)
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' :
+                   (MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm');
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = async (e) => {
+        if (!e.data || e.data.size === 0) return;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const ab = await e.data.arrayBuffer();
+          ws.send(ab);
+        }
+      };
+      mediaRecorder.onstart = () => setStatus('Streaming to relay...');
+      mediaRecorder.onstop = () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send('__stop__');
+          ws.close();
+        }
+        setStatus('Stopped');
+      };
+      // send small chunks frequently
+      mediaRecorder.start(200); // timeslice in ms
+      setStatus('Live (streaming)');
+    };
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error', err);
+      setStatus('WebSocket error');
+    };
+
+    ws.onclose = () => {
+      setStatus('Relay closed');
+    };
+  } catch (err) {
+    console.error(err);
+    setStatus('Failed to start live');
+  }
+};
+
+document.getElementById('stopLive').onclick = ()=>{
+  try {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    if (ws && ws.readyState === WebSocket.OPEN) { ws.send('__stop__'); ws.close(); }
+    setStatus('Stopped');
+  } catch(e) { console.warn(e); setStatus('Error stopping'); }
+};
+</script>
+</body>
+</html>
